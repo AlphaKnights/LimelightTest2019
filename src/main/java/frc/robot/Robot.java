@@ -7,15 +7,18 @@
 //dont dead open inside 
  package frc.robot;
 
+import com.analog.adis16448.frc.ADIS16448_IMU;
 import com.ctre.phoenix.motorcontrol.can.WPI_TalonSRX;
 
 import com.mach.LightDrive.*;
 
 import edu.wpi.first.wpilibj.DoubleSolenoid;
 import edu.wpi.first.wpilibj.Joystick;
+import edu.wpi.first.wpilibj.PowerDistributionPanel;
 import edu.wpi.first.wpilibj.Servo;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj.drive.MecanumDrive;
+import edu.wpi.first.cameraserver.CameraServer;
 import edu.wpi.first.networktables.NetworkTable;
 import edu.wpi.first.networktables.NetworkTableEntry;
 import edu.wpi.first.networktables.NetworkTableInstance;
@@ -33,6 +36,22 @@ public class Robot extends TimedRobot {
   private static final int kRearLeftChannel = 3;
   private static final int kFrontRightChannel = 2;
   private static final int kRearRightChannel = 4;
+  private static final int kLiftMotor1 = 5;
+  private static final int kLiftMotor2 = 6;
+  private static final int kGrabberMotor = 7;
+
+
+  private WPI_TalonSRX FrontLeft;
+  private WPI_TalonSRX RearLeft;
+  private WPI_TalonSRX FrontRight;
+  private WPI_TalonSRX RearRight;
+  private WPI_TalonSRX GrabberMotor;
+  private WPI_TalonSRX LiftMotor1; 
+  private WPI_TalonSRX LiftMotor2;
+
+  private PowerDistributionPanel pdp;
+  private ADIS16448_IMU gyro;
+
   private double fixedThrottle;
   private double xValue;
   private double yValue;
@@ -53,10 +72,10 @@ public class Robot extends TimedRobot {
   private DoubleSolenoid RearSolonoid;
   private DoubleSolenoid FrontSolonoid;
 
-  private boolean isSolonidDown;
-  boolean xboxAButtonDown;
-  boolean xboxBButtonDown;
-  boolean xboxXButtonDown;
+  private boolean isSolonoidDown;
+  private boolean xboxAButtonDown;
+  private boolean xboxBButtonDown;
+  private boolean xboxXButtonDown;
 
   @Override
   public void robotInit() {
@@ -64,13 +83,25 @@ public class Robot extends TimedRobot {
 
   @Override
   public void teleopInit() {
-    WPI_TalonSRX frontLeft = new WPI_TalonSRX(kFrontLeftChannel);
-    frontLeft.setInverted(true);
-    WPI_TalonSRX rearLeft = new WPI_TalonSRX(kRearLeftChannel);
-    WPI_TalonSRX frontRight = new WPI_TalonSRX(kFrontRightChannel);
-    WPI_TalonSRX rearRight = new WPI_TalonSRX(kRearRightChannel);
+    FrontLeft = new WPI_TalonSRX(kFrontLeftChannel);
+    FrontLeft.setInverted(true);
+    RearLeft = new WPI_TalonSRX(kRearLeftChannel);
+    FrontRight = new WPI_TalonSRX(kFrontRightChannel);
+    RearRight = new WPI_TalonSRX(kRearRightChannel);
+    
+    LiftMotor1 = new WPI_TalonSRX(kLiftMotor1);
+    LiftMotor2 = new WPI_TalonSRX(kLiftMotor2);
+    //LiftMotor2.follow(LiftMotor1);
+    GrabberMotor = new WPI_TalonSRX(kGrabberMotor);
 
-    m_robotDrive = new MecanumDrive(frontLeft, rearLeft, frontRight, rearRight);
+    GrabberMotor.configContinuousCurrentLimit(10);
+    GrabberMotor.configPeakCurrentLimit(10);
+    //GrabberMotor.configPeakCurrentDuration(500);
+    GrabberMotor.enableCurrentLimit(true);
+  
+    pdp = new PowerDistributionPanel();
+
+    m_robotDrive = new MecanumDrive(FrontLeft, RearLeft, FrontRight, RearRight);
     m_stick = new Joystick(kJoystickChannel);
     m_xbox = new XboxController(xboxControllerChannel);
     m_stick.setThrottleChannel(3);
@@ -87,6 +118,8 @@ public class Robot extends TimedRobot {
     xboxAButtonDown = false;
     xboxBButtonDown = false;
 
+    gyro = new ADIS16448_IMU();
+    gyro.calibrate();
   }
 
   @Override
@@ -104,8 +137,8 @@ public class Robot extends TimedRobot {
       // Get the data from the limelight if the button is pressed
       driveValues = LimelightMethods.AutoAlign(x, y);
 
-    } else if (isSolonidDown) {
-      fixedThrottle = 0.15;
+    } else if (isSolonoidDown) {
+      fixedThrottle = fixedThrottle * 0.4;
       // Drives with lower speed since a button is being pressed
       if (m_stick.getX() < 0) {
         xValue = -1 * (Math.pow(m_stick.getX(), 2) * fixedThrottle);
@@ -150,6 +183,30 @@ public class Robot extends TimedRobot {
     }
 
 
+    if(m_xbox.getBumper(Hand.kLeft)){
+      LiftMotor1.set(-(m_xbox.getY(Hand.kLeft)));
+      LiftMotor2.set(-(m_xbox.getY(Hand.kLeft)));
+    } else {
+      LiftMotor1.set(0);
+      LiftMotor2.set(0);
+    }
+
+    if(m_xbox.getTriggerAxis(Hand.kLeft) > 0.1){
+      GrabberMotor.set(m_xbox.getTriggerAxis(Hand.kLeft) * 0.5);
+    } else if (m_xbox.getTriggerAxis(Hand.kRight) >= 0.1){
+      GrabberMotor.set(-(m_xbox.getTriggerAxis(Hand.kRight)) * 0.5);
+    } else {
+      GrabberMotor.set(-0.1);
+    }
+    //GrabberMotor.set(m_xbox.getTriggerAxis(Hand.kLeft));
+    //GrabberMotor.set(-(m_xbox.getTriggerAxis(Hand.kRight)));
+
+
+
+//hmmmmm oof
+
+
+    
     /* 
     * Controls the Robot's pistons. Sets isSolonoidDown to True if any solonoid in in the kForward position.
     */
@@ -157,11 +214,11 @@ public class Robot extends TimedRobot {
     if(m_xbox.getAButtonPressed()) {
       if(!xboxAButtonDown){
         MiddleSolonoid.set(DoubleSolenoid.Value.kForward);
-        isSolonidDown = true;
+        isSolonoidDown = true;
         xboxAButtonDown = true;
       } else {
         MiddleSolonoid.set(DoubleSolenoid.Value.kReverse);
-        isSolonidDown = false;
+        isSolonoidDown = false;
         xboxAButtonDown = false;
       }
     }
@@ -170,11 +227,11 @@ public class Robot extends TimedRobot {
     if(m_xbox.getBButtonPressed()) {
       if(!xboxBButtonDown){
         RearSolonoid.set(DoubleSolenoid.Value.kForward);
-        isSolonidDown = true;
+        isSolonoidDown = true;
         xboxBButtonDown = true;
       } else {
         RearSolonoid.set(DoubleSolenoid.Value.kReverse);
-        isSolonidDown = false;
+        isSolonoidDown = false;
         xboxBButtonDown = false;
       }
     }
@@ -183,11 +240,11 @@ public class Robot extends TimedRobot {
     if(m_xbox.getXButtonPressed()) {
       if(!xboxXButtonDown){
         FrontSolonoid.set(DoubleSolenoid.Value.kForward);
-        isSolonidDown = true;
+        isSolonoidDown = true;
         xboxXButtonDown = true;
       } else {
         FrontSolonoid.set(DoubleSolenoid.Value.kReverse);
-        isSolonidDown = false;
+        isSolonoidDown = false;
         xboxXButtonDown = false;
       }
     }
@@ -201,6 +258,11 @@ public class Robot extends TimedRobot {
     SmartDashboard.putNumber("LimelightX", x);
     SmartDashboard.putNumber("LimelightY", y);
     SmartDashboard.putNumber("LimelightArea", area);
+    SmartDashboard.putNumber("GrabberCurrentDraw", GrabberMotor.getOutputCurrent());
+    SmartDashboard.putData(m_robotDrive);
+    SmartDashboard.putData(gyro);
+
+    SmartDashboard.putNumber("Gyro-X", gyro.getAngleX());
 
     m_xbox.setRumble(RumbleType.kLeftRumble, m_xbox.getTriggerAxis(Hand.kLeft));
     m_xbox.setRumble(RumbleType.kRightRumble, m_xbox.getTriggerAxis(Hand.kRight));
@@ -267,6 +329,17 @@ public class Robot extends TimedRobot {
     SmartDashboard.putNumber("X Moving Value", xValue);
   }
 
+  @Override
+  public void disabledInit() {
+    pdp = new PowerDistributionPanel();
+  }
+
+  @Override
+  public void disabledPeriodic() {
+    super.disabledPeriodic();
+  }
+
+
   LightDrivePWM lightDrive;
 
   @Override
@@ -280,6 +353,7 @@ public class Robot extends TimedRobot {
     m_stick.setThrottleChannel(3);
 
     m_xbox = new XboxController(xboxControllerChannel);
+    CameraServer.getInstance().startAutomaticCapture();
 
   }
 
