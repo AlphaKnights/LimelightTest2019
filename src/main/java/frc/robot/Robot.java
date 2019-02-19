@@ -7,7 +7,12 @@
 //dont dead open inside 
  package frc.robot;
 
-import com.analog.adis16448.frc.ADIS16448_IMU;
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.util.Properties;
+import java.io.IOException;
+import java.io.File;
+
 import com.ctre.phoenix.motorcontrol.can.WPI_TalonSRX;
 
 import com.mach.LightDrive.*;
@@ -79,6 +84,15 @@ public class Robot extends TimedRobot {
 
   @Override
   public void robotInit() {
+    try{
+    File file = new File("version.properties");
+    verson_properties = new FileInputStream(file);
+    props.load(verson_properties);
+    } catch (IOException io) {
+      io.printStackTrace();
+    }
+
+    System.out.println("Build Number: " + props.getProperty("VERSION_BUILD"));
   }
 
   @Override
