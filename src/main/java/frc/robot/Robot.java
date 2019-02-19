@@ -55,8 +55,6 @@ public class Robot extends TimedRobot {
   private WPI_TalonSRX LiftMotor1; 
   private WPI_TalonSRX LiftMotor2;
 
-  private PowerDistributionPanel pdp;
-  private ADIS16448_IMU gyro;
 
   private double fixedThrottle;
   private double xValue;
@@ -414,7 +412,7 @@ public class Robot extends TimedRobot {
 
   @Override
   public void disabledInit() {
-    pdp = new PowerDistributionPanel();
+    //pdp = new PowerDistributionPanel();
   }
 
   @Override
