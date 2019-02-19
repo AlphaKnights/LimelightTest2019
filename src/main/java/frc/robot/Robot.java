@@ -4,8 +4,8 @@
 /* must be accompanied by the FIRST BSD license file in the root directory of */
 /* the project.                                                               */
 /*----------------------------------------------------------------------------*/
-//dont dead open inside 
- package frc.robot;
+
+package frc.robot;
 
 import java.io.FileInputStream;
 import java.io.InputStream;
@@ -17,6 +17,7 @@ import com.ctre.phoenix.motorcontrol.can.WPI_TalonSRX;
 
 import com.mach.LightDrive.*;
 
+import edu.wpi.first.wpilibj.DigitalInput;
 import edu.wpi.first.wpilibj.DoubleSolenoid;
 import edu.wpi.first.wpilibj.Joystick;
 import edu.wpi.first.wpilibj.PowerDistributionPanel;
@@ -76,11 +77,21 @@ public class Robot extends TimedRobot {
   private DoubleSolenoid MiddleSolonoid;
   private DoubleSolenoid RearSolonoid;
   private DoubleSolenoid FrontSolonoid;
+  private DoubleSolenoid GrabberSolonoid;
+
+  private DigitalInput UpperGliftSwitch;
+  private DigitalInput LowerGliftSwitch;
+  
+  private PowerDistributionPanel pdp;
 
   private boolean isSolonoidDown;
   private boolean xboxAButtonDown;
   private boolean xboxBButtonDown;
   private boolean xboxXButtonDown;
+  private boolean xboxYButtonDown;
+
+  private Properties props;
+  private InputStream verson_properties;
 
   @Override
   public void robotInit() {
@@ -88,11 +99,11 @@ public class Robot extends TimedRobot {
     File file = new File("version.properties");
     verson_properties = new FileInputStream(file);
     props.load(verson_properties);
+    System.out.println("Build Number: " + props.getProperty("VERSION_BUILD"));
+
     } catch (IOException io) {
       io.printStackTrace();
     }
-
-    System.out.println("Build Number: " + props.getProperty("VERSION_BUILD"));
   }
 
   @Override
@@ -113,7 +124,12 @@ public class Robot extends TimedRobot {
     //GrabberMotor.configPeakCurrentDuration(500);
     GrabberMotor.enableCurrentLimit(true);
   
-    pdp = new PowerDistributionPanel();
+    if (UpperGliftSwitch == null){
+      UpperGliftSwitch = new DigitalInput(1);
+    }
+    if (LowerGliftSwitch == null){
+    LowerGliftSwitch = new DigitalInput(0);
+    }
 
     m_robotDrive = new MecanumDrive(FrontLeft, RearLeft, FrontRight, RearRight);
     m_stick = new Joystick(kJoystickChannel);
@@ -125,15 +141,29 @@ public class Robot extends TimedRobot {
     ty = table.getEntry("ty");
     ta = table.getEntry("ta");
 
-    MiddleSolonoid = new DoubleSolenoid(0,1);
-    RearSolonoid = new DoubleSolenoid(2,3);
-    FrontSolonoid = new DoubleSolenoid(4, 5);
+    if (MiddleSolonoid == null){
+      MiddleSolonoid = new DoubleSolenoid(0,1);
+    }
+    if (RearSolonoid == null){
+      RearSolonoid = new DoubleSolenoid(2,3);
+    }
+    if (FrontSolonoid == null){
+      FrontSolonoid = new DoubleSolenoid(4, 5);
+    }
+    if (GrabberSolonoid == null){
+      GrabberSolonoid = new DoubleSolenoid(6, 7);
+    }
+
+    if (pdp == null){
+      pdp = new  PowerDistributionPanel();
+    }
     xboxXButtonDown = false;
     xboxAButtonDown = false;
     xboxBButtonDown = false;
+    xboxYButtonDown = false;
 
-    gyro = new ADIS16448_IMU();
-    gyro.calibrate();
+    m_robotDrive.setSafetyEnabled(false);
+    CameraServer.getInstance().startAutomaticCapture();
   }
 
   @Override
@@ -142,6 +172,7 @@ public class Robot extends TimedRobot {
     double x = tx.getDouble(0.0);
     double y = ty.getDouble(0.0);
     double area = ta.getDouble(0.0);
+    
 
     // Use the joystick X axis for lateral movement, Y axis for forward
     // movement, and Z axis for rotation.
@@ -197,18 +228,25 @@ public class Robot extends TimedRobot {
     }
 
 
+    double output = -m_xbox.getY(Hand.kLeft);
     if(m_xbox.getBumper(Hand.kLeft)){
-      LiftMotor1.set(-(m_xbox.getY(Hand.kLeft)));
-      LiftMotor2.set(-(m_xbox.getY(Hand.kLeft)));
+      if (UpperGliftSwitch.get() == false) {
+        output = Math.min(output, 0);
+      } 
+      if (LowerGliftSwitch.get() == false){
+        output = Math.max(output, 0);
+      }
     } else {
-      LiftMotor1.set(0);
-      LiftMotor2.set(0);
-    }
+      output = 0.05;
+    } 
+    LiftMotor1.set(output * 0.5);
+    LiftMotor2.set(output * 0.5);
+
 
     if(m_xbox.getTriggerAxis(Hand.kLeft) > 0.1){
       GrabberMotor.set(m_xbox.getTriggerAxis(Hand.kLeft) * 0.5);
     } else if (m_xbox.getTriggerAxis(Hand.kRight) >= 0.1){
-      GrabberMotor.set(-(m_xbox.getTriggerAxis(Hand.kRight)) * 0.5);
+      GrabberMotor.set(-(m_xbox.getTriggerAxis(Hand.kRight)) * 0.75);
     } else {
       GrabberMotor.set(-0.1);
     }
@@ -225,42 +263,66 @@ public class Robot extends TimedRobot {
     * Controls the Robot's pistons. Sets isSolonoidDown to True if any solonoid in in the kForward position.
     */
     // Controlls the middle pistons
-    if(m_xbox.getAButtonPressed()) {
-      if(!xboxAButtonDown){
-        MiddleSolonoid.set(DoubleSolenoid.Value.kForward);
-        isSolonoidDown = true;
-        xboxAButtonDown = true;
-      } else {
-        MiddleSolonoid.set(DoubleSolenoid.Value.kReverse);
-        isSolonoidDown = false;
-        xboxAButtonDown = false;
+    if(m_xbox.getBumper(Hand.kRight)){
+      // Runs only when the right bumper **IS** pressed
+      if(m_xbox.getAButtonPressed()) {
+        if(!xboxAButtonDown){
+          MiddleSolonoid.set(DoubleSolenoid.Value.kForward);
+          isSolonoidDown = true;
+          xboxAButtonDown = true;
+        } else {
+          MiddleSolonoid.set(DoubleSolenoid.Value.kReverse);
+          isSolonoidDown = false;
+          xboxAButtonDown = false;
+        }
       }
-    }
 
-    // Controlls the rear pistons
-    if(m_xbox.getBButtonPressed()) {
-      if(!xboxBButtonDown){
-        RearSolonoid.set(DoubleSolenoid.Value.kForward);
-        isSolonoidDown = true;
-        xboxBButtonDown = true;
-      } else {
-        RearSolonoid.set(DoubleSolenoid.Value.kReverse);
-        isSolonoidDown = false;
-        xboxBButtonDown = false;
+      // Controlls the rear pistons
+      if(m_xbox.getBButtonPressed()) {
+        if(!xboxBButtonDown){
+          RearSolonoid.set(DoubleSolenoid.Value.kForward);
+          isSolonoidDown = true;
+          xboxBButtonDown = true;
+        } else {
+          RearSolonoid.set(DoubleSolenoid.Value.kReverse);
+          isSolonoidDown = false;
+          xboxBButtonDown = false;
+        }
       }
-    }
 
-    // Controlls the front pistons
-    if(m_xbox.getXButtonPressed()) {
-      if(!xboxXButtonDown){
-        FrontSolonoid.set(DoubleSolenoid.Value.kForward);
-        isSolonoidDown = true;
-        xboxXButtonDown = true;
-      } else {
-        FrontSolonoid.set(DoubleSolenoid.Value.kReverse);
-        isSolonoidDown = false;
-        xboxXButtonDown = false;
+      // Controlls the front pistons
+      if(m_xbox.getXButtonPressed()) {
+        if(!xboxXButtonDown){
+          FrontSolonoid.set(DoubleSolenoid.Value.kForward);
+          isSolonoidDown = true;
+          xboxXButtonDown = true;
+        } else {
+          FrontSolonoid.set(DoubleSolenoid.Value.kReverse);
+          isSolonoidDown = false;
+          xboxXButtonDown = false;
+        }
       }
+      // Fixes weird issue with the button being pressed, then the bumper, and then the button action coming
+      // Basically, the action was acting if it was quened.
+      m_xbox.getYButtonPressed();
+    } else {
+      // Runs when the right bumber **ISN'T** pressed
+      // Controlls the grabber piston
+      if(m_xbox.getYButtonPressed()) {
+        if(!xboxYButtonDown){
+          GrabberSolonoid.set(DoubleSolenoid.Value.kForward);
+          xboxYButtonDown = true;
+        } else {
+          GrabberSolonoid.set(DoubleSolenoid.Value.kReverse);
+          xboxYButtonDown = false;
+        }
+      }
+
+      // Fixes weird issue with the button being pressed, then the bumper, and then the button action coming
+      // Basically, the action was acting if it was quened.
+      m_xbox.getXButtonPressed();
+      m_xbox.getAButtonPressed();
+      m_xbox.getBButtonPressed();
     }
 
 
@@ -274,9 +336,16 @@ public class Robot extends TimedRobot {
     SmartDashboard.putNumber("LimelightArea", area);
     SmartDashboard.putNumber("GrabberCurrentDraw", GrabberMotor.getOutputCurrent());
     SmartDashboard.putData(m_robotDrive);
-    SmartDashboard.putData(gyro);
+    SmartDashboard.putData(pdp);
 
-    SmartDashboard.putNumber("Gyro-X", gyro.getAngleX());
+    SmartDashboard.putBoolean("X", xboxXButtonDown);
+    SmartDashboard.putBoolean("Y", xboxYButtonDown);
+    SmartDashboard.putBoolean("B", xboxBButtonDown);
+    SmartDashboard.putBoolean("A", xboxAButtonDown);
+    SmartDashboard.putBoolean("Pistons Down", isSolonoidDown);
+    SmartDashboard.putBoolean("Upper Limit", !UpperGliftSwitch.get());
+    SmartDashboard.putBoolean("Lower Limit", !LowerGliftSwitch.get());
+    SmartDashboard.putNumber("Fixed Throttle", fixedThrottle);
 
     m_xbox.setRumble(RumbleType.kLeftRumble, m_xbox.getTriggerAxis(Hand.kLeft));
     m_xbox.setRumble(RumbleType.kRightRumble, m_xbox.getTriggerAxis(Hand.kRight));
