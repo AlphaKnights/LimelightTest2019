@@ -225,18 +225,13 @@ public class Robot extends TimedRobot {
       driveValues = LimelightMethods.AutoAlign(x, y);
 
     } else if (isSolonoidExtended) {
+      // TODO: Should I limit the rotation also?
       fixedTranslationThrottle = fixedTranslationThrottle * 0.4;
+
       // Drives with lower speed since a button is being pressed
-      if (m_translateStick.getX() < 0) {
-        xValue = -1 * (Math.pow(m_translateStick.getX(), 2) * fixedTranslationThrottle);
-      } else {
-        xValue = (Math.pow(m_translateStick.getX(), 2) * fixedTranslationThrottle);
-      }
-      if (m_translateStick.getY() < 0) {
-        yValue = (Math.pow(m_translateStick.getY(), 2) * fixedTranslationThrottle);
-      } else {
-        yValue = -1 * (Math.pow(m_translateStick.getY(), 2) * fixedTranslationThrottle);
-      }
+      xValue = -1 * m_translateStick.getX() * fixedTranslationThrottle;
+      yValue = m_translateStick.getY() * fixedTranslationThrottle;
+
       if (m_rotateStick.getZ() > 0.1 || m_rotateStick.getZ() < 0.1) {
         fixedRotationPower = m_rotateStick.getZ() * 0.7 * fixedRotationThrottle;
       } else {
@@ -271,16 +266,9 @@ public class Robot extends TimedRobot {
     } else 
     {
       // Drives manually
-      if (m_translateStick.getX() < 0) {
-        xValue = -1 * (Math.pow(m_translateStick.getX(), 2) * fixedTranslationThrottle);
-      } else {
-        xValue = (Math.pow(m_translateStick.getX(), 2) * fixedTranslationThrottle);
-      }
-      if (m_translateStick.getY() < 0) {
-        yValue = (Math.pow(m_translateStick.getY(), 2) * fixedTranslationThrottle);
-      } else {
-        yValue = -1 * (Math.pow(m_translateStick.getY(), 2) * fixedTranslationThrottle);
-      }
+      xValue = -1 * m_translateStick.getX() * fixedTranslationThrottle;
+      yValue = m_translateStick.getY() * fixedTranslationThrottle;
+
       if (m_rotateStick.getZ() > 0.1 || m_rotateStick.getZ() < 0.1) {
         fixedRotationPower = m_rotateStick.getZ() * 0.7  * fixedRotationThrottle;
       } else {
