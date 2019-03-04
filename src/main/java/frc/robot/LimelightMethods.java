@@ -55,10 +55,10 @@ public class LimelightMethods {
           }
       
           if (x < -2){
-            rotateValue = -0.1;
+            rotateValue = -0.2;
           }
           else if (x > 2){
-            rotateValue = 0.1;
+            rotateValue = 0.2;
           }
           else {
             rotateValue = 0;
@@ -72,4 +72,24 @@ public class LimelightMethods {
       
         return new double[]{sideValue, forwardValue, rotateValue};
     }
+
+    //for non-rotational movement
+    /* public static double[] AutoAlign2(double x, double y){
+      double sideValue, forwardValue, rotateValue;
+      
+      if (x < -2){
+          sideValue = 0.15;
+        }
+        else if (x > 2){
+          sideValue = -0.15;
+        }
+        else {
+          sideValue = 0;
+        }
+    
+       
+    
+      return new double[]{sideValue, forwardValue, rotateValue};
+  } */
 }
+
