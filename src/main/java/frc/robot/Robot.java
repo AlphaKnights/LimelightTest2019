@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.io.File;
 
 import com.ctre.phoenix.motorcontrol.can.WPI_TalonSRX;
+import com.ctre.phoenix.motorcontrol.NeutralMode;
 
 import com.mach.LightDrive.*;
 
@@ -29,6 +30,7 @@ import edu.wpi.first.networktables.NetworkTable;
 import edu.wpi.first.networktables.NetworkTableEntry;
 import edu.wpi.first.networktables.NetworkTableInstance;
 import edu.wpi.first.wpilibj.TimedRobot;
+import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.XboxController;
 import edu.wpi.first.wpilibj.GenericHID.Hand;
 import edu.wpi.first.wpilibj.GenericHID.RumbleType;
@@ -56,7 +58,8 @@ public class Robot extends TimedRobot {
   private WPI_TalonSRX LiftMotor2;
 
 
-  private double fixedThrottle;
+  private double fixedTranslationThrottle;
+  private double fixedRotationThrottle;
   private double xValue;
   private double yValue;
   private double zValue;
@@ -65,11 +68,13 @@ public class Robot extends TimedRobot {
   NetworkTableEntry ty;
   NetworkTableEntry ta;
 
-  private static final int kJoystickChannel = 0;
-  private static final int xboxControllerChannel = 1;
+  private static final int kTranslateStickChannel = 0;
+  private static final int kRotateStickChannel = 1;
+  private static final int xboxControllerChannel = 2;
 
   private MecanumDrive m_robotDrive;
-  private Joystick m_stick;
+  private Joystick m_translateStick;
+  private Joystick m_rotateStick;
   private XboxController m_xbox;
   
   private DoubleSolenoid MiddleSolonoid;
@@ -82,7 +87,6 @@ public class Robot extends TimedRobot {
   
   private PowerDistributionPanel pdp;
 
-  private boolean isSolonoidDown;
   private boolean xboxAButtonDown;
   private boolean xboxBButtonDown;
   private boolean xboxXButtonDown;
@@ -90,6 +94,8 @@ public class Robot extends TimedRobot {
 
   private Properties props;
   private InputStream verson_properties;
+
+  private Timer grabberTimer;
 
   @Override
   public void robotInit() {
@@ -126,19 +132,26 @@ public class Robot extends TimedRobot {
       UpperGliftSwitch = new DigitalInput(1);
     }
     if (LowerGliftSwitch == null){
-    LowerGliftSwitch = new DigitalInput(0);
+      LowerGliftSwitch = new DigitalInput(0);
     }
 
+    // Initializes the drivetrain
     m_robotDrive = new MecanumDrive(FrontLeft, RearLeft, FrontRight, RearRight);
-    m_stick = new Joystick(kJoystickChannel);
+
+    // Sets up the control inputs
+    m_translateStick = new Joystick(kTranslateStickChannel);
+    m_rotateStick = new Joystick(kRotateStickChannel);
     m_xbox = new XboxController(xboxControllerChannel);
-    m_stick.setThrottleChannel(3);
+    m_translateStick.setThrottleChannel(3);
+    m_rotateStick.setThrottleChannel(3);
 
     NetworkTable table = NetworkTableInstance.getDefault().getTable("limelight");
     tx = table.getEntry("tx");
     ty = table.getEntry("ty");
     ta = table.getEntry("ta");
 
+    // Initializes the 4 solonoids. Null checks fix a stupid issue
+    // TODO: Change this to one line ifs
     if (MiddleSolonoid == null){
       MiddleSolonoid = new DoubleSolenoid(0,1);
     }
@@ -162,115 +175,155 @@ public class Robot extends TimedRobot {
 
     m_robotDrive.setSafetyEnabled(false);
     CameraServer.getInstance().startAutomaticCapture();
+
+    grabberTimer = new Timer();
   }
 
   @Override
   public void teleopPeriodic() {
+    // Tracks how long the periodic loop takes. Used for debuging.
+    Timer profilePeriodicTimer = new Timer();
+    profilePeriodicTimer.start();
+    // One place for all the driving values
     double[] driveValues;
+    // Limelight Data
     double x = tx.getDouble(0.0);
     double y = ty.getDouble(0.0);
     double area = ta.getDouble(0.0);
+    // Tracks Solonoid state to apply the speed limit
+    Boolean isSolonoidExtended;
+    // Calcs the rotation power including the deadband
+    double fixedRotationPower;
+
+    // Checks if any solonoid is extended. If so, set isSolonoidExtended to true. Otherwise, set it to false. 
+    if (FrontSolonoid.get() == DoubleSolenoid.Value.kForward || MiddleSolonoid.get() == DoubleSolenoid.Value.kForward || RearSolonoid.get() == DoubleSolenoid.Value.kForward){
+      isSolonoidExtended = true;
+    } else {
+      isSolonoidExtended = false;
+    }
     
 
-    // Use the joystick X axis for lateral movement, Y axis for forward
-    // movement, and Z axis for rotation.
-    fixedThrottle = 1 - ((m_stick.getThrottle() + 1) / 2);
+    // Use the translate stick X axis for lateral movement, Y axis for forward
+    // movement, and Z axis on the rotate stick for rotation.
+    fixedTranslationThrottle = 1 - ((m_translateStick.getThrottle() + 1) / 2);
+    fixedRotationThrottle = (-m_rotateStick.getThrottle() + 1) / 2;
 
-    if (m_stick.getRawButton(2)) {
+    if (m_translateStick.getRawButton(2)) {
       // Get the data from the limelight if the button is pressed
       driveValues = LimelightMethods.AutoAlign(x, y);
 
-    } else if (isSolonoidDown) {
-      fixedThrottle = fixedThrottle * 0.4;
+    } else if (isSolonoidExtended) {
+      fixedTranslationThrottle = fixedTranslationThrottle * 0.4;
       // Drives with lower speed since a button is being pressed
-      if (m_stick.getX() < 0) {
-        xValue = -1 * (Math.pow(m_stick.getX(), 2) * fixedThrottle);
+      if (m_translateStick.getX() < 0) {
+        xValue = -1 * (Math.pow(m_translateStick.getX(), 2) * fixedTranslationThrottle);
       } else {
-        xValue = (Math.pow(m_stick.getX(), 2) * fixedThrottle);
+        xValue = (Math.pow(m_translateStick.getX(), 2) * fixedTranslationThrottle);
       }
-      if (m_stick.getY() < 0) {
-        yValue = (Math.pow(m_stick.getY(), 2) * fixedThrottle);
+      if (m_translateStick.getY() < 0) {
+        yValue = (Math.pow(m_translateStick.getY(), 2) * fixedTranslationThrottle);
       } else {
-        yValue = -1 * (Math.pow(m_stick.getY(), 2) * fixedThrottle);
+        yValue = -1 * (Math.pow(m_translateStick.getY(), 2) * fixedTranslationThrottle);
       }
-      if (fixedThrottle != 0){
-        if (m_stick.getZ() < 0) {
-          zValue = -1 * Math.pow(m_stick.getZ(), 2) * 0.3;
-        } else {
-          zValue = Math.pow(m_stick.getZ(), 2) * 0.3;
-        }
+      if (m_rotateStick.getZ() > 0.1 || m_rotateStick.getZ() < 0.1) {
+        fixedRotationPower = m_rotateStick.getZ() * 0.7 * fixedRotationThrottle;
+      } else {
+        fixedRotationPower = 0.0;
+      }
+
+      driveValues = new double[]{xValue, yValue, fixedRotationPower};
+
+    } else if (m_translateStick.getPOV() != -1) {
+      // Drives using Single Axis Movement (SAM) Momement controlls for absolute movement. Implementation may be changed later.
+      yValue = 0;
+      xValue = 0;
+      zValue = 0;
+      switch (m_translateStick.getPOV()) {
+        case 0:
+          yValue = fixedTranslationThrottle * 0.6;
+          break;
+        case 90:
+          xValue = fixedTranslationThrottle * 0.75;
+          break;
+        case 180:
+          yValue = -fixedTranslationThrottle * 0.6;
+          break;
+        case 270: 
+          xValue = -fixedTranslationThrottle * 0.75;
+          break;
+        default:
+          break;
       }
       driveValues = new double[]{xValue, yValue, zValue};
 
-    } else {
+    } else 
+    {
       // Drives manually
-      if (m_stick.getX() < 0) {
-        xValue = -1 * (Math.pow(m_stick.getX(), 2) * fixedThrottle);
+      if (m_translateStick.getX() < 0) {
+        xValue = -1 * (Math.pow(m_translateStick.getX(), 2) * fixedTranslationThrottle);
       } else {
-        xValue = (Math.pow(m_stick.getX(), 2) * fixedThrottle);
+        xValue = (Math.pow(m_translateStick.getX(), 2) * fixedTranslationThrottle);
       }
-      if (m_stick.getY() < 0) {
-        yValue = (Math.pow(m_stick.getY(), 2) * fixedThrottle);
+      if (m_translateStick.getY() < 0) {
+        yValue = (Math.pow(m_translateStick.getY(), 2) * fixedTranslationThrottle);
       } else {
-        yValue = -1 * (Math.pow(m_stick.getY(), 2) * fixedThrottle);
+        yValue = -1 * (Math.pow(m_translateStick.getY(), 2) * fixedTranslationThrottle);
       }
-      if (fixedThrottle != 0){
-        if (m_stick.getZ() < 0) {
-          zValue = -1 * Math.pow(m_stick.getZ(), 2) * 0.3;
-        } else {
-          zValue = Math.pow(m_stick.getZ(), 2) * 0.3;
-        }
+      if (m_rotateStick.getZ() > 0.1 || m_rotateStick.getZ() < 0.1) {
+        fixedRotationPower = m_rotateStick.getZ() * 0.7  * fixedRotationThrottle;
+      } else {
+        fixedRotationPower = 0.0;
       }
-      // Make it so both methods of moving the robot use the same output :)
-      driveValues = new double[]{xValue, yValue, zValue};
+      // Make it so all methods of moving the robot use the same output :)
+      driveValues = new double[]{xValue, yValue, fixedRotationPower};
     }
 
-
+    // Use the lefy hand stick to controll the robot's slide movement
     double output = -m_xbox.getY(Hand.kLeft);
     if(m_xbox.getBumper(Hand.kLeft)){
+      // Used to aproximately fight gravity
+      output = 0.08;
+    } else {
+      // Checks the limit switch, will keep slide from hitting anything wrong
       if (UpperGliftSwitch.get() == false) {
         output = Math.min(output, 0);
       } 
       if (LowerGliftSwitch.get() == false){
         output = Math.max(output, 0);
       }
-    } else {
-      output = 0.05;
     } 
-    LiftMotor1.set(output * 0.5);
-    LiftMotor2.set(output * 0.5);
+    // Do the movement at the end
+    LiftMotor1.set(output * 0.75);
+    LiftMotor2.set(output * 0.75);
 
 
+    // Controlls the speed of the grabber motor when pulling the trigger
     if(m_xbox.getTriggerAxis(Hand.kLeft) > 0.1){
-      GrabberMotor.set(m_xbox.getTriggerAxis(Hand.kLeft) * 0.5);
+      // Push out
+      GrabberMotor.set(m_xbox.getTriggerAxis(Hand.kLeft) * 1.0);
     } else if (m_xbox.getTriggerAxis(Hand.kRight) >= 0.1){
-      GrabberMotor.set(-(m_xbox.getTriggerAxis(Hand.kRight)) * 0.75);
+      // Pull in
+      GrabberMotor.set(-(m_xbox.getTriggerAxis(Hand.kRight)) * 0.5);
     } else {
       GrabberMotor.set(-0.1);
     }
     //GrabberMotor.set(m_xbox.getTriggerAxis(Hand.kLeft));
     //GrabberMotor.set(-(m_xbox.getTriggerAxis(Hand.kRight)));
 
-
-
-//hmmmmm oof
-
-
     
     /* 
-    * Controls the Robot's pistons. Sets isSolonoidDown to True if any solonoid in in the kForward position.
+    * Controls the Robot's pistons. 
     */
-    // Controlls the middle pistons
     if(m_xbox.getBumper(Hand.kRight)){
       // Runs only when the right bumper **IS** pressed
+
+      // Controlls the middle pistons
       if(m_xbox.getAButtonPressed()) {
         if(!xboxAButtonDown){
           MiddleSolonoid.set(DoubleSolenoid.Value.kForward);
-          isSolonoidDown = true;
           xboxAButtonDown = true;
         } else {
           MiddleSolonoid.set(DoubleSolenoid.Value.kReverse);
-          isSolonoidDown = false;
           xboxAButtonDown = false;
         }
       }
@@ -279,11 +332,9 @@ public class Robot extends TimedRobot {
       if(m_xbox.getBButtonPressed()) {
         if(!xboxBButtonDown){
           RearSolonoid.set(DoubleSolenoid.Value.kForward);
-          isSolonoidDown = true;
           xboxBButtonDown = true;
         } else {
           RearSolonoid.set(DoubleSolenoid.Value.kReverse);
-          isSolonoidDown = false;
           xboxBButtonDown = false;
         }
       }
@@ -292,17 +343,17 @@ public class Robot extends TimedRobot {
       if(m_xbox.getXButtonPressed()) {
         if(!xboxXButtonDown){
           FrontSolonoid.set(DoubleSolenoid.Value.kForward);
-          isSolonoidDown = true;
           xboxXButtonDown = true;
         } else {
           FrontSolonoid.set(DoubleSolenoid.Value.kReverse);
-          isSolonoidDown = false;
           xboxXButtonDown = false;
         }
       }
+
       // Fixes weird issue with the button being pressed, then the bumper, and then the button action coming
-      // Basically, the action was acting if it was quened.
+      // Basically, the getStartButton functions returned true if the button was pressed since it was last checked, sort of queuing up presses for the next check.
       m_xbox.getYButtonPressed();
+      m_xbox.getStartButtonPressed();
     } else {
       // Runs when the right bumber **ISN'T** pressed
       // Controlls the grabber piston
@@ -316,6 +367,28 @@ public class Robot extends TimedRobot {
         }
       }
 
+      /* 
+      * Controlls the fine tuned ball drop sequence. May need to extend window
+      */
+      if(m_xbox.getStartButtonPressed()) {
+        grabberTimer.reset();
+        grabberTimer.start();
+        System.out.println("State 4");
+      }
+      
+      if(grabberTimer.get() <= 0.02 && grabberTimer.get() > 0.01) {
+        GrabberSolonoid.set(DoubleSolenoid.Value.kForward);
+        System.out.println("State 1");
+      } else if (grabberTimer.get() <= 0.2 && grabberTimer.get() >= 0.17) {
+        GrabberSolonoid.set(DoubleSolenoid.Value.kReverse);
+        System.out.println("State 2");
+      } else if (grabberTimer.get() >= 1) {
+        grabberTimer.reset();
+        grabberTimer.stop();
+        System.out.println("State 3");
+      }
+      
+
       // Fixes weird issue with the button being pressed, then the bumper, and then the button action coming
       // Basically, the action was acting if it was quened.
       m_xbox.getXButtonPressed();
@@ -324,11 +397,29 @@ public class Robot extends TimedRobot {
     }
 
 
+    // Allow the trigger to put on the brakes and override the power of all drive motors to zero
+    // TODO: Fix the potential slowdowns that this check may cause
+    if (m_translateStick.getTrigger()){
+      xValue = 0.0;
+      yValue = 0.0;
+      zValue = 0.0;
+      FrontLeft.setNeutralMode(NeutralMode.Brake);
+      FrontRight.setNeutralMode(NeutralMode.Brake);
+      RearRight.setNeutralMode(NeutralMode.Brake);
+      RearLeft.setNeutralMode(NeutralMode.Brake);
 
-    // Actually make the robot move; for reals?
+      driveValues = new double[]{xValue, yValue, zValue};
+    } else {
+      FrontLeft.setNeutralMode(NeutralMode.Coast);
+      FrontRight.setNeutralMode(NeutralMode.Coast);
+      RearRight.setNeutralMode(NeutralMode.Coast);
+      RearLeft.setNeutralMode(NeutralMode.Coast);
+    }
+
+    // Actually make the robot move, uses the values stored at any earlier point.
     m_robotDrive.driveCartesian(driveValues[0], driveValues[1], driveValues[2]);
 
-    // Put limelight values onto smart dashboard for debuging. oh ok
+    // Put limelight values onto smart dashboard for debuging.
     SmartDashboard.putNumber("LimelightX", x);
     SmartDashboard.putNumber("LimelightY", y);
     SmartDashboard.putNumber("LimelightArea", area);
@@ -340,13 +431,15 @@ public class Robot extends TimedRobot {
     SmartDashboard.putBoolean("Y", xboxYButtonDown);
     SmartDashboard.putBoolean("B", xboxBButtonDown);
     SmartDashboard.putBoolean("A", xboxAButtonDown);
-    SmartDashboard.putBoolean("Pistons Down", isSolonoidDown);
+    SmartDashboard.putBoolean("Pistons Down", isSolonoidExtended);
     SmartDashboard.putBoolean("Upper Limit", !UpperGliftSwitch.get());
     SmartDashboard.putBoolean("Lower Limit", !LowerGliftSwitch.get());
-    SmartDashboard.putNumber("Fixed Throttle", fixedThrottle);
+    SmartDashboard.putNumber("Fixed Throttle", fixedTranslationThrottle);
 
     m_xbox.setRumble(RumbleType.kLeftRumble, m_xbox.getTriggerAxis(Hand.kLeft));
     m_xbox.setRumble(RumbleType.kRightRumble, m_xbox.getTriggerAxis(Hand.kRight));
+
+    System.out.println(profilePeriodicTimer.get());
   }
 
   /*
@@ -362,8 +455,8 @@ public class Robot extends TimedRobot {
     WPI_TalonSRX rearRight = new WPI_TalonSRX(kRearRightChannel);
 
     m_robotDrive = new MecanumDrive(frontLeft, rearLeft, frontRight, rearRight);
-    m_stick = new Joystick(kJoystickChannel);
-    m_stick.setThrottleChannel(3);
+    m_translateStick = new Joystick(kTranslateStickChannel);
+    m_translateStick.setThrottleChannel(3);
 
     NetworkTable table = NetworkTableInstance.getDefault().getTable("limelight");
     tx = table.getEntry("tx");
@@ -430,8 +523,8 @@ public class Robot extends TimedRobot {
     Servo servo1 = new Servo(0);
 		Servo servo2 = new Servo(1);
     lightDrive = new LightDrivePWM(servo1, servo2);
-    m_stick = new Joystick(kJoystickChannel);
-    m_stick.setThrottleChannel(3);
+    m_translateStick = new Joystick(kTranslateStickChannel);
+    m_translateStick.setThrottleChannel(3);
 
     m_xbox = new XboxController(xboxControllerChannel);
     CameraServer.getInstance().startAutomaticCapture();
@@ -443,7 +536,7 @@ public class Robot extends TimedRobot {
     m_xbox.setRumble(RumbleType.kLeftRumble, m_xbox.getTriggerAxis(Hand.kLeft));
     m_xbox.setRumble(RumbleType.kRightRumble, m_xbox.getTriggerAxis(Hand.kRight));
 
-    if (m_stick.getRawButton(2)){
+    if (m_translateStick.getRawButton(2)){
       lightDrive.SetColor(1, Color.RED);
     } else {
       lightDrive.SetColor(1, Color.BLUE);
