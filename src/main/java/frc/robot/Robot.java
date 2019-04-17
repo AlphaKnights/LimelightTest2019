@@ -25,6 +25,7 @@ import edu.wpi.first.wpilibj.PowerDistributionPanel;
 import edu.wpi.first.wpilibj.Servo;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj.drive.MecanumDrive;
+import edu.wpi.cscore.UsbCamera;
 import edu.wpi.first.cameraserver.CameraServer;
 import edu.wpi.first.networktables.NetworkTable;
 import edu.wpi.first.networktables.NetworkTableEntry;
@@ -47,7 +48,7 @@ public class Robot extends TimedRobot {
   private static final int kLiftMotor1 = 5;
   private static final int kLiftMotor2 = 6;
   private static final int kGrabberMotor = 7;
-
+ 
 
   private WPI_TalonSRX FrontLeft;
   private WPI_TalonSRX RearLeft;
@@ -97,6 +98,10 @@ public class Robot extends TimedRobot {
 
   private Timer grabberTimer;
 
+  private UsbCamera upperCamera;
+  private UsbCamera lowerCamera;
+  private CameraServer camServer;
+
   @Override
   public void robotInit() {
     try{
@@ -107,20 +112,28 @@ public class Robot extends TimedRobot {
 
     } catch (IOException io) {
       io.printStackTrace();
-    }
+    }  
+
+    camServer = CameraServer.getInstance();
+    upperCamera = camServer.startAutomaticCapture("UpperCam", 0);
+    lowerCamera = camServer.startAutomaticCapture("LowerCam", 1);
+    upperCamera.setExposureAuto();
+    lowerCamera.setExposureAuto();
+    upperCamera.setFPS(15);
+    lowerCamera.setFPS(15);
+    //upperCamera.setResolution(568, 320);
   }
 
   @Override
   public void teleopInit() {
-    FrontLeft = new WPI_TalonSRX(kFrontLeftChannel);
+    FrontLeft = new WPI_TalonSRX(3);
     FrontLeft.setInverted(true);
-    RearLeft = new WPI_TalonSRX(kRearLeftChannel);
-    FrontRight = new WPI_TalonSRX(kFrontRightChannel);
-    RearRight = new WPI_TalonSRX(kRearRightChannel);
+    RearLeft = new WPI_TalonSRX(1);
+    FrontRight = new WPI_TalonSRX(4);
+    RearRight = new WPI_TalonSRX(2);
     
     LiftMotor1 = new WPI_TalonSRX(kLiftMotor1);
     LiftMotor2 = new WPI_TalonSRX(kLiftMotor2);
-    //LiftMotor2.follow(LiftMotor1);
     GrabberMotor = new WPI_TalonSRX(kGrabberMotor);
 
     GrabberMotor.configContinuousCurrentLimit(10);
@@ -174,7 +187,6 @@ public class Robot extends TimedRobot {
     xboxYButtonDown = false;
 
     m_robotDrive.setSafetyEnabled(false);
-    CameraServer.getInstance().startAutomaticCapture();
 
     grabberTimer = new Timer();
   }
@@ -305,8 +317,9 @@ public class Robot extends TimedRobot {
       // Pull in
       GrabberMotor.set(-(m_xbox.getTriggerAxis(Hand.kRight)) * 0.5);
     } else {
-      GrabberMotor.set(-0.1);
+      GrabberMotor.set(-0.15);
     }
+    
     //GrabberMotor.set(m_xbox.getTriggerAxis(Hand.kLeft));
     //GrabberMotor.set(-(m_xbox.getTriggerAxis(Hand.kRight)));
 
@@ -449,63 +462,18 @@ public class Robot extends TimedRobot {
    */
   @Override
   public void autonomousInit() {
-    WPI_TalonSRX frontLeft = new WPI_TalonSRX(kFrontLeftChannel);
-    WPI_TalonSRX rearLeft = new WPI_TalonSRX(kRearLeftChannel);
-    WPI_TalonSRX frontRight = new WPI_TalonSRX(kFrontRightChannel);
-    WPI_TalonSRX rearRight = new WPI_TalonSRX(kRearRightChannel);
-
-    m_robotDrive = new MecanumDrive(frontLeft, rearLeft, frontRight, rearRight);
-    m_translateStick = new Joystick(kTranslateStickChannel);
-    m_translateStick.setThrottleChannel(3);
-
-    NetworkTable table = NetworkTableInstance.getDefault().getTable("limelight");
-    tx = table.getEntry("tx");
-    ty = table.getEntry("ty");
-    ta = table.getEntry("ta");
+    teleopInit();
   }
 
   @Override
   public void autonomousPeriodic() {
-
-    double x = tx.getDouble(0.0);
-    double y = ty.getDouble(0.0);
-    double area = ta.getDouble(0.0);
-
-    if (x < -2) {
-      zValue = -0.15;
-    } else if (x > 2) {
-      zValue = 0.15;
-    } else {
-      zValue = 0;
-    }
-
-    SmartDashboard.putNumber("LimelightArea", area);
-    if (area > 2) {
-      // Finding if somthing is close
-      System.out.print("Object is close");
-
-      yValue = 0.15;
-    } else if (area < 1.5 && area > 0.1) {
-      // Finding if somthing is far
-      System.out.print("Object is far");
-      yValue = -((-0.25 * area) + 0.5);
-    } else {
-      yValue = 0;
-    }
-
-    xValue = 0;
-
-    m_robotDrive.driveCartesian(xValue, yValue, zValue);
-
-    SmartDashboard.putNumber("LimelightX", x);
-    SmartDashboard.putNumber("LimelightY", y);
-    SmartDashboard.putNumber("Y Moving Value", yValue);
-    SmartDashboard.putNumber("X Moving Value", xValue);
+    teleopPeriodic();
   }
 
   @Override
   public void disabledInit() {
     //pdp = new PowerDistributionPanel();
+
   }
 
   @Override
@@ -527,7 +495,6 @@ public class Robot extends TimedRobot {
     m_translateStick.setThrottleChannel(3);
 
     m_xbox = new XboxController(xboxControllerChannel);
-    CameraServer.getInstance().startAutomaticCapture();
 
   }
 
