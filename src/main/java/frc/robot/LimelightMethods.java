@@ -14,82 +14,21 @@ package frc.robot;
 public class LimelightMethods {
 
     // Default Method
-    public static double[] AutoAlign(double x, double y, double forwardValue){
-        double sideValue, rotateValue;
+    public static double[] autoAlign(double[] camtranData){
+        double sideValue = 0.0, rotateValue = 0.0, forwardValue = 0.0;
+        double KpR = 0.015;
+        double KpS = 0.01;
         
-        if (x < -2){
-            sideValue = 0.15;
-          }
-          else if (x > 2){
-            sideValue = -0.15;
-          }
-          else {
-            sideValue = 0;
-          }
-      
-          if (x < -2){
-            rotateValue = -0.1;
-          }
-          else if (x > 2){
-            rotateValue = 0.1;
-          }
-          else {
-            rotateValue = 0;
-          }
+        if((camtranData[4] >= 0.2 || camtranData[4] <= -0.2) && camtranData[4] != 0.0){
+          rotateValue = camtranData[4] * KpR;
+        }
+        if((camtranData[0] >= 2 || camtranData[0] <= -2) && camtranData[0] != 0.0){
+           sideValue = camtranData[0] * KpS;
+        } else {
+            forwardValue = 0.2;
+        }
       
         return new double[]{sideValue, forwardValue, rotateValue};
     }
-
-    // Override for no forward value. Why is it done this way!?!?
-    public static double[] AutoAlign(double x, double y){
-        double sideValue, forwardValue, rotateValue;
-        
-        if (x < -2){
-            sideValue = 0.15;
-          }
-          else if (x > 2){
-            sideValue = -0.15;
-          }
-          else {
-            sideValue = 0;
-          }
-      
-          if (x < -2){
-            rotateValue = -0.2;
-          }
-          else if (x > 2){
-            rotateValue = 0.2;
-          }
-          else {
-            rotateValue = 0;
-          }
-
-          if (rotateValue == 0 && sideValue == 0){
-            forwardValue = 0.15;
-          } else {
-            forwardValue = 0;
-          }
-      
-        return new double[]{sideValue, forwardValue, rotateValue};
-    }
-
-    //for non-rotational movement
-    /* public static double[] AutoAlign2(double x, double y){
-      double sideValue, forwardValue, rotateValue;
-      
-      if (x < -2){
-          sideValue = 0.15;
-        }
-        else if (x > 2){
-          sideValue = -0.15;
-        }
-        else {
-          sideValue = 0;
-        }
-    
-       
-    
-      return new double[]{sideValue, forwardValue, rotateValue};
-  } */
 }
 

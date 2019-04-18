@@ -68,6 +68,7 @@ public class Robot extends TimedRobot {
   NetworkTableEntry tx;
   NetworkTableEntry ty;
   NetworkTableEntry ta;
+  NetworkTableEntry camtran;
 
   private static final int kTranslateStickChannel = 0;
   private static final int kRotateStickChannel = 1;
@@ -159,6 +160,7 @@ public class Robot extends TimedRobot {
     m_rotateStick.setThrottleChannel(3);
 
     NetworkTable table = NetworkTableInstance.getDefault().getTable("limelight");
+    camtran = table.getEntry("camtran");
     tx = table.getEntry("tx");
     ty = table.getEntry("ty");
     ta = table.getEntry("ta");
@@ -199,9 +201,9 @@ public class Robot extends TimedRobot {
     // One place for all the driving values
     double[] driveValues;
     // Limelight Data
-    double x = tx.getDouble(0.0);
-    double y = ty.getDouble(0.0);
-    double area = ta.getDouble(0.0);
+    double[] backupDouble = new double[]{0.0,0.0,0.0,0.0,0.0};
+    double[] camtranData = camtran.getDoubleArray(backupDouble);
+    
     // Tracks Solonoid state to apply the speed limit
     Boolean isSolonoidExtended;
     // Calcs the rotation power including the deadband
@@ -222,16 +224,21 @@ public class Robot extends TimedRobot {
 
     if (m_translateStick.getRawButton(2)) {
       // Get the data from the limelight if the button is pressed
-      driveValues = LimelightMethods.AutoAlign(x, y);
-
+      driveValues = LimelightMethods.autoAlign(camtranData);
+      
     } else if (isSolonoidExtended) {
-      // TODO: Should I limit the rotation also?
       fixedTranslationThrottle = fixedTranslationThrottle * 0.4;
-
       // Drives with lower speed since a button is being pressed
-      xValue = -1 * m_translateStick.getX() * fixedTranslationThrottle;
-      yValue = m_translateStick.getY() * fixedTranslationThrottle;
-
+      if (m_translateStick.getX() < 0) {
+        xValue = -1 * (Math.pow(m_translateStick.getX(), 2) * fixedTranslationThrottle);
+      } else {
+        xValue = (Math.pow(m_translateStick.getX(), 2) * fixedTranslationThrottle);
+      }
+      if (m_translateStick.getY() < 0) {
+        yValue = (Math.pow(m_translateStick.getY(), 2) * fixedTranslationThrottle);
+      } else {
+        yValue = -1 * (Math.pow(m_translateStick.getY(), 2) * fixedTranslationThrottle);
+      }
       if (m_rotateStick.getZ() > 0.1 || m_rotateStick.getZ() < 0.1) {
         fixedRotationPower = m_rotateStick.getZ() * 0.7 * fixedRotationThrottle;
       } else {
@@ -266,9 +273,16 @@ public class Robot extends TimedRobot {
     } else 
     {
       // Drives manually
-      xValue = -1 * m_translateStick.getX() * fixedTranslationThrottle;
-      yValue = m_translateStick.getY() * fixedTranslationThrottle;
-
+      if (m_translateStick.getX() < 0) {
+        xValue = -1 * (Math.pow(m_translateStick.getX(), 2) * fixedTranslationThrottle);
+      } else {
+        xValue = (Math.pow(m_translateStick.getX(), 2) * fixedTranslationThrottle);
+      }
+      if (m_translateStick.getY() < 0) {
+        yValue = (Math.pow(m_translateStick.getY(), 2) * fixedTranslationThrottle);
+      } else {
+        yValue = -1 * (Math.pow(m_translateStick.getY(), 2) * fixedTranslationThrottle);
+      }
       if (m_rotateStick.getZ() > 0.1 || m_rotateStick.getZ() < 0.1) {
         fixedRotationPower = m_rotateStick.getZ() * 0.7  * fixedRotationThrottle;
       } else {
@@ -421,19 +435,20 @@ public class Robot extends TimedRobot {
     m_robotDrive.driveCartesian(driveValues[0], driveValues[1], driveValues[2]);
 
     // Put limelight values onto smart dashboard for debuging.
-    SmartDashboard.putNumber("LimelightX", x);
-    SmartDashboard.putNumber("LimelightY", y);
-    SmartDashboard.putNumber("LimelightArea", area);
+    // SmartDashboard.putNumber("LimelightX", x);
+    // SmartDashboard.putNumber("LimelightY", y);
+    // SmartDashboard.putNumber("LimelightArea", area);
     SmartDashboard.putNumber("GrabberCurrentDraw", GrabberMotor.getOutputCurrent());
     SmartDashboard.putData(m_robotDrive);
     SmartDashboard.putData(pdp);
+    SmartDashboard.putNumberArray("Camtran Data", camtranData);
 
     SmartDashboard.putBoolean("X", xboxXButtonDown);
     SmartDashboard.putBoolean("Y", xboxYButtonDown);
     SmartDashboard.putBoolean("B", xboxBButtonDown);
     SmartDashboard.putBoolean("A", xboxAButtonDown);
     SmartDashboard.putBoolean("Pistons Down", isSolonoidExtended);
-    SmartDashboard.putBoolean("Upper Limit", !UpperGliftSwitch.get());
+    SmartDashboard.putBoolean("Upper Limit", UpperGliftSwitch.get());
     SmartDashboard.putBoolean("Lower Limit", !LowerGliftSwitch.get());
     SmartDashboard.putNumber("Fixed Throttle", fixedTranslationThrottle);
 
