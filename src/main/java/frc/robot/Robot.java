@@ -229,9 +229,16 @@ public class Robot extends TimedRobot {
       fixedTranslationThrottle = fixedTranslationThrottle * 0.4;
 
       // Drives with lower speed since a button is being pressed
-      xValue = -1 * m_translateStick.getX() * fixedTranslationThrottle;
-      yValue = -1 * m_translateStick.getY() * fixedTranslationThrottle;
-
+      if (m_translateStick.getX() < 0) {
+        xValue = -1 * (Math.pow(m_translateStick.getX(), 2) * fixedTranslationThrottle);
+      } else {
+        xValue = (Math.pow(m_translateStick.getX(), 2) * fixedTranslationThrottle);
+      }
+      if (m_translateStick.getY() < 0) {
+        yValue = (Math.pow(m_translateStick.getY(), 2) * fixedTranslationThrottle);
+      } else {
+        yValue = -1 * (Math.pow(m_translateStick.getY(), 2) * fixedTranslationThrottle);
+      }
       if (m_rotateStick.getZ() > 0.1 || m_rotateStick.getZ() < 0.1) {
         fixedRotationPower = m_rotateStick.getZ() * 0.7 * fixedRotationThrottle;
       } else {
@@ -266,14 +273,23 @@ public class Robot extends TimedRobot {
     } else 
     {
       // Drives manually
-      xValue = -1 * m_translateStick.getX() * fixedTranslationThrottle;
-      yValue = -1 * m_translateStick.getY() * fixedTranslationThrottle;
-
+      if (m_translateStick.getX() < 0) {
+        xValue = -1 * (Math.pow(m_translateStick.getX(), 2) * fixedTranslationThrottle);
+      } else {
+        xValue = (Math.pow(m_translateStick.getX(), 2) * fixedTranslationThrottle);
+      }
+      if (m_translateStick.getY() < 0) {
+        yValue = (Math.pow(m_translateStick.getY(), 2) * fixedTranslationThrottle);
+      } else {
+        yValue = -1 * (Math.pow(m_translateStick.getY(), 2) * fixedTranslationThrottle);
+      }
       if (m_rotateStick.getZ() > 0.1 || m_rotateStick.getZ() < 0.1) {
         fixedRotationPower = m_rotateStick.getZ() * 0.7  * fixedRotationThrottle;
       } else {
         fixedRotationPower = 0.0;
       }
+      // Make it so all methods of moving the robot use the same output :)
+      driveValues = new double[]{xValue, yValue, fixedRotationPower};
       // Make it so all methods of moving the robot use the same output :)
       driveValues = new double[]{xValue, yValue, fixedRotationPower};
     }
